@@ -1,5 +1,6 @@
 use crate::cache::Cache;
 use crate::xml_ext::write_elements;
+use crate::GlobalArgs;
 use eyre::bail;
 use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -146,7 +147,7 @@ impl Book {
         self.cover = Some(bytes.to_vec());
         Ok(())
     }
-    pub async fn update_chapter_content(&mut self) -> eyre::Result<()> {
+    pub async fn update_chapter_content(&mut self, chapter_index: usize, global_args: &GlobalArgs) -> eyre::Result<()> {
         let num_chapters = self.chapters.len();
         // Select the chapter-inner and chapter-content div.
         let content_selector = Selector::parse(".chapter-inner.chapter-content").unwrap();
@@ -159,51 +160,41 @@ impl Book {
         let authors_note_start_selector = Selector::parse("hr + .portlet > .author-note").unwrap();
         let authors_note_end_selector = Selector::parse("div + .portlet > .author-note").unwrap();
 
-        // Check for existing progress
-        let start_index = Cache::read_download_progress(self)?.unwrap_or(0);
-        if start_index > 0 {
-            tracing::info!(
-                "Resuming download from chapter {} of {}",
-                start_index + 1,
-                num_chapters
-            );
-        }
+        let chapter = &mut self.chapters[chapter_index];
+        tracing::info!(
+            "Downloading chapter '{}' ({} of {})",
+            chapter.title,
+            chapter_index + 1,
+            num_chapters
+        );
+        let url = format!("https://www.royalroad.com{}", chapter.url);
+        let request = self
+            .client
+            .get(url)
+            .header("User-Agent", USER_AGENT)
+            .send()
+            .await?
+            .error_for_status()?;
+        let text = request.text().await?;
 
-        let mut current_index = start_index;
-        while current_index < num_chapters {
-            let chapter = &mut self.chapters[current_index];
-            tracing::info!(
-                "Downloading chapter '{}' ({} of {})",
-                chapter.title,
-                current_index + 1,
-                num_chapters
-            );
-            let url = format!("https://www.royalroad.com{}", chapter.url);
-            let request = self
-                .client
-                .get(url)
-                .header("User-Agent", USER_AGENT)
-                .send()
-                .await?
-                .error_for_status()?;
-            let text = request.text().await?;
+        let parsed = Html::parse_document(&text);
 
-            let parsed = Html::parse_document(&text);
+        // First select content with the content selector.
+        let content = parsed
+            .select(&content_selector)
+            .next()
+            .ok_or(eyre::eyre!("No content found"))?;
 
-            // First select content with the content selector.
-            let content = parsed
-                .select(&content_selector)
-                .next()
-                .ok_or(eyre::eyre!("No content found"))?;
+        // Then pull out non-stolen items.
+        let content = content
+            .select(&not_stolen_selector)
+            .map(|v| v.html())
+            .collect::<Vec<_>>()
+            .join("\n");
+        chapter.content = Some(content);
 
-            // Then pull out non-stolen items.
-            let content = content
-                .select(&not_stolen_selector)
-                .map(|v| v.html())
-                .collect::<Vec<_>>()
-                .join("\n");
-            chapter.content = Some(content);
-
+        // Only parse AN if not ignored.
+        if !global_args.ignore_author_notes {
             // Parse starting AN.
             if let Some(authors_note) = parsed.select(&authors_note_start_selector).next() {
                 let authors_note = authors_note.inner_html();
@@ -218,29 +209,6 @@ impl Book {
                     chapter.authors_note_end = Some(authors_note);
                 }
             }
-
-            // Save progress every 100 chapters
-            if (current_index + 1) % 100 == 0 {
-                tracing::info!(
-                    "Saving checkpoint at chapter {} of {}",
-                    current_index + 1,
-                    num_chapters
-                );
-                Cache::save_download_progress(self, current_index + 1)?;
-                Cache::write_book(self)?;
-            }
-
-            // Sleep for 0.5 seconds to avoid rate limiting.
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-            current_index += 1;
-        }
-
-        // Clear the progress file when done
-        let cache_dir = Cache::cache_path()?.join(self.id.to_string());
-        let progress_file = cache_dir.join("download_progress.json");
-        if progress_file.exists() {
-            std::fs::remove_file(progress_file)?;
         }
 
         Ok(())
