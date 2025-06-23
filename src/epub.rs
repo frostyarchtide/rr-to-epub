@@ -151,8 +151,8 @@ impl Book {
         // Select the chapter-inner and chapter-content div.
         let content_selector = Selector::parse(".chapter-inner.chapter-content").unwrap();
 
-        // Select all elements within the content that are not divs with a class (they are the stolen messages).
-        let not_stolen_selector = Selector::parse(":scope > :not(div[class])").unwrap();
+        // Select all elements within the content that are not spans with a class (they are the stolen messages).
+        let not_stolen_selector = Selector::parse(":scope > :not(span[class])").unwrap();
 
         // Strange selectors are because RR doesn't have a way to tell if the author's note is
         // at the start or the end in the HTML.
