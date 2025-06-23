@@ -152,9 +152,6 @@ impl Book {
         // Select the chapter-inner and chapter-content div.
         let content_selector = Selector::parse(".chapter-inner.chapter-content").unwrap();
 
-        // Select all elements within the content that are not spans with a class (they are the stolen messages).
-        let not_stolen_selector = Selector::parse(":scope > :not(span[class])").unwrap();
-
         // Strange selectors are because RR doesn't have a way to tell if the author's note is
         // at the start or the end in the HTML.
         let authors_note_start_selector = Selector::parse("hr + .portlet > .author-note").unwrap();
@@ -185,12 +182,9 @@ impl Book {
             .next()
             .ok_or(eyre::eyre!("No content found"))?;
 
-        // Then pull out non-stolen items.
-        let content = content
-            .select(&not_stolen_selector)
-            .map(|v| v.html())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let stolen_regex = regex::Regex::new(r#"<span class="[^"]+">(?:.|\n)*?</span>"#).unwrap();
+        let content = stolen_regex.replace_all(&content.html(), "").to_string();
+
         chapter.content = Some(content);
 
         // Only parse AN if not ignored.
