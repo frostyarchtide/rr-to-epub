@@ -188,7 +188,7 @@ impl Book {
         chapter.content = Some(content);
 
         // Only parse AN if not ignored.
-        if !global_args.ignore_author_notes {
+        if global_args.author_notes {
             // Parse starting AN.
             if let Some(authors_note) = parsed.select(&authors_note_start_selector).next() {
                 let authors_note = authors_note.inner_html();

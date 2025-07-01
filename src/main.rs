@@ -35,9 +35,9 @@ pub struct GlobalArgs {
     #[arg(long = "ignore-cache", global = true)]
     /// Ignore the cache and redownload all chapters even if the book wasn't modified.
     pub ignore_cache: bool,
-    #[arg(long = "ignore-author-notes", global = true)]
-    /// Ignore author notes.
-    pub ignore_author_notes: bool,
+    #[arg(long = "author-notes", global = true)]
+    /// Parse author notes.
+    pub author_notes: bool,
 }
 
 #[derive(Debug, Parser)]

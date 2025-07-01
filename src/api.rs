@@ -28,6 +28,10 @@ impl RoyalRoadApi {
                             cached.update_chapter_content(i, global_args).await?;
                             Cache::write_book(&cached)?;
                         }
+                    } else {
+                        cached.chapters.push(chapter.clone());
+                        cached.update_chapter_content(i, global_args).await?;
+                        Cache::write_book(&cached)?;
                     }
                 }
 
